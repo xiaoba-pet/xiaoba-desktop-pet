@@ -103,6 +103,7 @@ final class PetView: NSView {
     private var walking = false
     private var facingLeft = false
     private(set) var sleeping = false
+    var isBeingInteractedWith: Bool { mouseDownLocation != nil }
 
     var onPositionChanged: (() -> Void)?
     var onResetPosition: (() -> Void)?
@@ -707,7 +708,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             setPetWalking(false)
             return
         }
-        guard NSEvent.pressedMouseButtons & 1 == 0 else {
+        guard !petView.isBeingInteractedWith else {
             setPetWalking(false)
             return
         }
