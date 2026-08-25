@@ -63,7 +63,7 @@ final class WalkVideoView: NSView {
         CATransaction.commit()
     }
 
-    func setPlaying(_ shouldPlay: Bool, facingLeft shouldFaceLeft: Bool) {
+    func setState(visible: Bool, playing shouldPlay: Bool, facingLeft shouldFaceLeft: Bool) {
         if facingLeft != shouldFaceLeft {
             facingLeft = shouldFaceLeft
             CATransaction.begin()
@@ -72,9 +72,9 @@ final class WalkVideoView: NSView {
             CATransaction.commit()
         }
 
+        isHidden = !visible
         guard playing != shouldPlay else { return }
         playing = shouldPlay
-        isHidden = !shouldPlay
         if shouldPlay {
             player.playImmediately(atRate: playbackRate)
         } else {
@@ -103,12 +103,13 @@ final class PetView: NSView {
     private var walking = false
     private var facingLeft = false
     private(set) var sleeping = false
-    var isBeingInteractedWith: Bool { mouseDownLocation != nil }
+    var isBeingDragged: Bool { didDrag && mouseDownLocation != nil }
 
     var onPositionChanged: (() -> Void)?
     var onResetPosition: (() -> Void)?
     var onToggleTopmost: (() -> Bool)?
     var onToggleAutoWalk: (() -> Bool)?
+    var onToggleWalkPause: (() -> String)?
     var currentTopmostState: (() -> Bool)?
     var currentAutoWalkState: (() -> Bool)?
     var onShowAbout: (() -> Void)?
@@ -445,7 +446,7 @@ final class PetView: NSView {
         didDrag = false
         handledDoubleClick = event.clickCount >= 2
         if handledDoubleClick {
-            toggleSleep()
+            showStatus(onToggleWalkPause?() ?? "自动散步没有开启", pulse: false)
         }
     }
 
@@ -547,6 +548,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastWalkTimestamp: TimeInterval?
     private let walkSpeed: CGFloat = 81
     private var autoWalkEnabled = false
+    private var walkManuallyPaused = false
     private var topmost = true
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -628,6 +630,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         petView.onResetPosition = { [weak self] in self?.resetPosition() }
         petView.onToggleTopmost = { [weak self] in self?.toggleTopmost() ?? true }
         petView.onToggleAutoWalk = { [weak self] in self?.toggleAutoWalk() ?? false }
+        petView.onToggleWalkPause = { [weak self] in self?.toggleWalkPause() ?? "自动散步没有开启" }
         petView.currentTopmostState = { [weak self] in self?.topmost ?? true }
         petView.currentAutoWalkState = { [weak self] in self?.autoWalkEnabled ?? false }
         petView.onShowAbout = { [weak self] in self?.showAbout() }
@@ -674,9 +677,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return item
     }
 
-    private func setPetWalking(_ walking: Bool, facingLeft: Bool = false) {
+    private func setPetWalking(_ walking: Bool, facingLeft: Bool = false, playVideo: Bool = true) {
         petView.setWalking(walking, facingLeft: facingLeft)
-        walkVideoView.setPlaying(walking, facingLeft: facingLeft)
+        walkVideoView.setState(
+            visible: walking,
+            playing: walking && playVideo,
+            facingLeft: facingLeft
+        )
+    }
+
+    private func toggleWalkPause() -> String {
+        guard autoWalkEnabled else { return "自动散步没有开启" }
+        guard !petView.sleeping else { return "小八正在睡觉～" }
+
+        walkManuallyPaused.toggle()
+        let facingLeft = walkDirection < 0
+        if walkManuallyPaused {
+            setPetWalking(true, facingLeft: facingLeft, playVideo: false)
+            saveWindowOrigin()
+            return "散步暂停"
+        }
+
+        lastWalkTimestamp = CACurrentMediaTime()
+        setPetWalking(true, facingLeft: facingLeft)
+        return "继续散步！"
     }
 
     private func startContinuousWalk() {
@@ -708,8 +732,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             setPetWalking(false)
             return
         }
-        guard !petView.isBeingInteractedWith else {
-            setPetWalking(false)
+        if walkManuallyPaused {
+            setPetWalking(true, facingLeft: walkDirection < 0, playVideo: false)
+            return
+        }
+        guard !petView.isBeingDragged else {
+            setPetWalking(true, facingLeft: walkDirection < 0, playVideo: false)
             return
         }
 
@@ -735,6 +763,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func toggleAutoWalk() -> Bool {
         autoWalkEnabled.toggle()
+        walkManuallyPaused = false
         UserDefaults.standard.set(autoWalkEnabled, forKey: autoWalkDefaultsKey)
         if autoWalkEnabled {
             startContinuousWalk()
@@ -797,7 +826,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "小八桌面宠物"
-        alert.informativeText = "单击摸摸，双击睡觉或唤醒，拖动可以搬家。右键还能喂零食、自动散步和切换置顶。"
+        alert.informativeText = "单击摸摸，双击暂停或继续散步，拖动可以搬家。右键还能喂零食、切换睡姿、自动散步和切换置顶。"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "知道啦")
         alert.runModal()
