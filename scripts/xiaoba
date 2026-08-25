@@ -10,6 +10,7 @@ ASSET="$ROOT/Assets/xiaoba.png"
 SLEEP_ASSET="$ROOT/Assets/xiaoba-sleep.png"
 WALK_VIDEO="$ROOT/Assets/xiaoba-walk.mov"
 WALK_BUNDLED_VIDEO="$APP_ROOT/Contents/Resources/xiaoba-walk.mov"
+ACTION_VIDEO_NAMES=(pat feed call sleep-enter sleep-loop wake)
 LABEL="local.xiaoba.desktop-pet"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
@@ -31,7 +32,18 @@ USAGE
 }
 
 build_if_needed() {
+  local needs_build=false
   if [[ ! -x "$APP_BIN" || ! -f "$WALK_BUNDLED_VIDEO" || "$SOURCE" -nt "$APP_BIN" || "$ASSET" -nt "$APP_BIN" || "$SLEEP_ASSET" -nt "$APP_BIN" || "$WALK_VIDEO" -nt "$APP_BIN" ]]; then
+    needs_build=true
+  fi
+  for name in $ACTION_VIDEO_NAMES; do
+    local source_video="$ROOT/Assets/xiaoba-$name.mov"
+    local bundled_video="$APP_ROOT/Contents/Resources/xiaoba-$name.mov"
+    if [[ ! -f "$bundled_video" || "$source_video" -nt "$APP_BIN" ]]; then
+      needs_build=true
+    fi
+  done
+  if [[ "$needs_build" == true ]]; then
     "$SCRIPT_DIR/build_app.sh" >/dev/null
   fi
 }

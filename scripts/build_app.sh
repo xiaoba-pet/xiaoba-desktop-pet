@@ -10,6 +10,7 @@ RESOURCES="$CONTENTS/Resources"
 BIN="$MACOS/xiaoba-bin"
 SLEEP_ASSET="$ROOT/Assets/xiaoba-sleep.png"
 WALK_VIDEO="$ROOT/Assets/xiaoba-walk.mov"
+ACTION_VIDEO_NAMES=(pat feed call sleep-enter sleep-loop wake)
 CACHE_ROOT="$ROOT/.build/module-cache"
 DEFAULT_SDK="$(xcrun --sdk macosx --show-sdk-path)"
 COMPAT_SDK="/Library/Developer/CommandLineTools/SDKs/MacOSX14.sdk"
@@ -38,6 +39,9 @@ cp "$ROOT/Assets/xiaoba.png" "$RESOURCES/xiaoba.png"
 cp "$SLEEP_ASSET" "$RESOURCES/xiaoba-sleep.png"
 rm -rf "$RESOURCES/walk"
 cp "$WALK_VIDEO" "$RESOURCES/xiaoba-walk.mov"
+for name in $ACTION_VIDEO_NAMES; do
+  cp "$ROOT/Assets/xiaoba-$name.mov" "$RESOURCES/xiaoba-$name.mov"
+done
 
 cat >"$CONTENTS/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -59,9 +63,9 @@ cat >"$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.2.0</string>
+  <string>0.3.0</string>
   <key>CFBundleVersion</key>
-  <string>2</string>
+  <string>3</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>LSUIElement</key>

@@ -4,13 +4,14 @@
 
 ## 已有互动
 
-- 单击小八：摸摸它，显示随机回应和爱心。
+- 单击小八：播放连续的“摸摸”反应视频，并显示随机回应和爱心。
 - 双击小八：冻结当前走路视频并暂停位移；再次双击继续，不切换图片。
 - 拖动小八：移动到喜欢的位置，位置会自动记住。
 - 鼠标悬浮：小八会打招呼。
-- 右键小八：叫名字、喂零食、切换真实睡姿、自动散步、切换置顶、复位或退出；开关项带勾选状态。
+- 右键小八：叫名字、喂零食、睡觉 / 叫醒都会播放对应的本地连续视频；也能切换自动散步、置顶、复位或退出。
 - 菜单栏小狗图标：在小八被窗口挡住时也能叫它回来。
 - 自动散步：开启后小八会以 1.5 倍速播放本地透明连续走路视频，窗口位置以 60 FPS 刷新；到左右边缘会同步镜像身体朝向并掉头，睡觉和拖动时暂停。
+- 回到当前屏幕右下角：以鼠标所在显示器为准立即归位，停留 1.25 秒后再恢复自动散步。
 
 ## 本地运行
 
@@ -56,8 +57,13 @@ curl -fsSL "https://raw.githubusercontent.com/xiaoba-pet/xiaoba-desktop-pet/main
 
 ```text
 Assets/xiaoba.png         小八透明 PNG
-Assets/xiaoba-sleep.png   小八透明睡姿 PNG
+Assets/xiaoba-sleep.png   小八透明睡姿 PNG（视频缺失时的后备素材）
 Assets/xiaoba-walk.mov    本地透明无缝走路视频（ProRes 4444）
+Assets/xiaoba-pat.mov     本地透明摸摸视频
+Assets/xiaoba-feed.mov    本地透明吃零食视频
+Assets/xiaoba-call.mov    本地透明回应名字视频
+Assets/xiaoba-sleep-*.mov 本地透明入睡与睡眠循环视频
+Assets/xiaoba-wake.mov    本地透明醒来视频
 Sources/XiaobaPet.swift   AppKit 桌宠程序
 scripts/build_app.sh      构建本地 .app
 scripts/xiaoba            启动、停止和自启动 CLI
