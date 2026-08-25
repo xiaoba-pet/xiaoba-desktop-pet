@@ -1,0 +1,145 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+APP_ROOT="$ROOT/dist/小八.app"
+APP_BIN="$APP_ROOT/Contents/MacOS/xiaoba-bin"
+SOURCE="$ROOT/Sources/XiaobaPet.swift"
+ASSET="$ROOT/Assets/xiaoba.png"
+LABEL="local.xiaoba.desktop-pet"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+
+print_usage() {
+  cat <<'USAGE'
+用法：xiaoba <命令>
+
+命令：
+  start                 启动小八
+  stop                  退出小八
+  restart               重新启动小八
+  status                查看小八是否正在运行
+  build                 重新构建小八.app
+  autostart install     登录 macOS 后自动启动
+  autostart uninstall   取消登录自动启动
+  cli install [目录]    安装命令行入口，默认 ~/.local/bin
+  path                  显示项目安装目录
+USAGE
+}
+
+build_if_needed() {
+  if [[ ! -x "$APP_BIN" || "$SOURCE" -nt "$APP_BIN" || "$ASSET" -nt "$APP_BIN" ]]; then
+    "$SCRIPT_DIR/build_app.sh" >/dev/null
+  fi
+}
+
+stop_pet() {
+  if [[ -x "$APP_BIN" ]] && pkill -f "$APP_BIN" 2>/dev/null; then
+    echo "小八已经休息啦。"
+  else
+    echo "小八当前没有运行。"
+  fi
+}
+
+install_autostart() {
+  build_if_needed
+  mkdir -p "$HOME/Library/LaunchAgents"
+  cat >"$PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/open</string>
+    <string>-n</string>
+    <string>$APP_ROOT</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/tmp/xiaoba-desktop-pet.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/xiaoba-desktop-pet.err.log</string>
+</dict>
+</plist>
+PLIST
+  plutil -lint "$PLIST" >/dev/null
+  launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$PLIST"
+  launchctl kickstart -k "gui/$(id -u)/$LABEL"
+  echo "已开启登录自动启动：$PLIST"
+}
+
+uninstall_autostart() {
+  launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true
+  if [[ -f "$PLIST" ]]; then
+    rm "$PLIST"
+  fi
+  echo "已取消小八的登录自动启动。"
+}
+
+command="${1:-help}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+case "$command" in
+  start|open)
+    build_if_needed
+    /usr/bin/open -n "$APP_ROOT" --args "$@"
+    echo "小八来啦！"
+    ;;
+  stop|quit)
+    stop_pet
+    ;;
+  restart)
+    stop_pet
+    build_if_needed
+    /usr/bin/open -n "$APP_ROOT" --args "$@"
+    echo "小八重新来陪你啦！"
+    ;;
+  status)
+    if [[ -x "$APP_BIN" ]] && pgrep -f "$APP_BIN" >/dev/null 2>&1; then
+      echo "小八正在运行。"
+      exit 0
+    fi
+    echo "小八当前没有运行。"
+    exit 1
+    ;;
+  build)
+    exec "$SCRIPT_DIR/build_app.sh"
+    ;;
+  autostart)
+    subcommand="${1:-help}"
+    case "$subcommand" in
+      install) install_autostart ;;
+      uninstall|remove) uninstall_autostart ;;
+      *) echo "用法：xiaoba autostart <install|uninstall>" >&2; exit 2 ;;
+    esac
+    ;;
+  cli)
+    subcommand="${1:-help}"
+    if [[ "$subcommand" == "install" ]]; then
+      shift
+      exec "$SCRIPT_DIR/install_cli.sh" "$@"
+    fi
+    echo "用法：xiaoba cli install [目录]" >&2
+    exit 2
+    ;;
+  path)
+    echo "$ROOT"
+    ;;
+  help|--help|-h)
+    print_usage
+    ;;
+  *)
+    echo "未知命令：$command" >&2
+    print_usage >&2
+    exit 2
+    ;;
+esac
