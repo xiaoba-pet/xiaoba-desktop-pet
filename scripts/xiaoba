@@ -8,7 +8,9 @@ APP_BIN="$APP_ROOT/Contents/MacOS/xiaoba-bin"
 SOURCE="$ROOT/Sources/XiaobaPet.swift"
 ASSET="$ROOT/Assets/xiaoba.png"
 SLEEP_ASSET="$ROOT/Assets/xiaoba-sleep.png"
+IDLE_VIDEO="$ROOT/Assets/xiaoba-idle.mov"
 WALK_VIDEO="$ROOT/Assets/xiaoba-walk.mov"
+IDLE_BUNDLED_VIDEO="$APP_ROOT/Contents/Resources/xiaoba-idle.mov"
 WALK_BUNDLED_VIDEO="$APP_ROOT/Contents/Resources/xiaoba-walk.mov"
 ACTION_VIDEO_NAMES=(pat feed call sleep-enter sleep-loop wake)
 LABEL="local.xiaoba.desktop-pet"
@@ -33,7 +35,7 @@ USAGE
 
 build_if_needed() {
   local needs_build=false
-  if [[ ! -x "$APP_BIN" || ! -f "$WALK_BUNDLED_VIDEO" || "$SOURCE" -nt "$APP_BIN" || "$ASSET" -nt "$APP_BIN" || "$SLEEP_ASSET" -nt "$APP_BIN" || "$WALK_VIDEO" -nt "$APP_BIN" ]]; then
+  if [[ ! -x "$APP_BIN" || ! -f "$IDLE_BUNDLED_VIDEO" || ! -f "$WALK_BUNDLED_VIDEO" || "$SOURCE" -nt "$APP_BIN" || "$ASSET" -nt "$APP_BIN" || "$SLEEP_ASSET" -nt "$APP_BIN" || "$IDLE_VIDEO" -nt "$APP_BIN" || "$WALK_VIDEO" -nt "$APP_BIN" ]]; then
     needs_build=true
   fi
   for name in $ACTION_VIDEO_NAMES; do

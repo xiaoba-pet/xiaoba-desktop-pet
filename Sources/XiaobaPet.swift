@@ -16,7 +16,7 @@ final class WalkVideoView: NSView {
     private var looper: AVPlayerLooper?
     private var playing = false
     private var facingLeft = false
-    private let playbackRate: Float = 1.5
+    private let playbackRate: Float
 
     override func makeBackingLayer() -> CALayer {
         let rootLayer = CALayer()
@@ -25,7 +25,8 @@ final class WalkVideoView: NSView {
         return rootLayer
     }
 
-    init(frame: NSRect, videoURL: URL?) {
+    init(frame: NSRect, videoURL: URL?, playbackRate: Float = 1.5) {
+        self.playbackRate = playbackRate
         super.init(frame: frame)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -709,11 +710,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let topmostDefaultsKey = "XiaobaPetTopmost"
     private var window: NSWindow!
     private var petView: PetView!
+    private var idleVideoView: WalkVideoView!
     private var walkVideoView: WalkVideoView!
     private var actionVideoView: ActionVideoView!
     private var actionVideoURLs: [PetAction: URL] = [:]
     private var actionSequence = 0
     private var actionVideoActive = false
+    private var hasIdleVideo = false
     private var statusItem: NSStatusItem?
     private var statusAutoWalkItem: NSMenuItem?
     private var statusTopmostItem: NSMenuItem?
@@ -733,6 +736,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         let sleepImage = loadSleepImage()
+        let idleVideoURL = loadIdleVideoURL()
         let walkVideoURL = loadWalkVideoURL()
         actionVideoURLs = loadActionVideoURLs()
 
@@ -743,12 +747,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             topmost = UserDefaults.standard.bool(forKey: topmostDefaultsKey)
         }
 
-        buildWindow(image: image, sleepImage: sleepImage, walkVideoURL: walkVideoURL)
+        buildWindow(
+            image: image,
+            sleepImage: sleepImage,
+            idleVideoURL: idleVideoURL,
+            walkVideoURL: walkVideoURL
+        )
         buildStatusItem()
         if CommandLine.arguments.contains("--reset-position") {
             resetPosition()
         } else if autoWalkEnabled {
             startContinuousWalk()
+        } else {
+            showIdleVideo()
         }
     }
 
@@ -773,6 +784,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return Bundle.main.url(forResource: "xiaoba-walk", withExtension: "mov")
     }
 
+    private func loadIdleVideoURL() -> URL? {
+        if let explicitPath = argumentValue("--idle-video") {
+            return URL(fileURLWithPath: explicitPath)
+        }
+        return Bundle.main.url(forResource: "xiaoba-idle", withExtension: "mov")
+    }
+
     private func loadActionVideoURLs() -> [PetAction: URL] {
         Dictionary(uniqueKeysWithValues: PetAction.allCases.compactMap { action in
             guard let url = Bundle.main.url(
@@ -785,7 +803,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         })
     }
 
-    private func buildWindow(image: NSImage, sleepImage: NSImage?, walkVideoURL: URL?) {
+    private func buildWindow(
+        image: NSImage,
+        sleepImage: NSImage?,
+        idleVideoURL: URL?,
+        walkVideoURL: URL?
+    ) {
         let savedOrigin = savedWindowOrigin()
         let initialOrigin = savedOrigin ?? defaultWindowOrigin()
         window = NSWindow(
@@ -806,6 +829,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor.clear.cgColor
 
+        hasIdleVideo = idleVideoURL != nil
+        idleVideoView = WalkVideoView(
+            frame: NSRect(x: 20, y: -8, width: 240, height: 240),
+            videoURL: idleVideoURL,
+            playbackRate: 1
+        )
         walkVideoView = WalkVideoView(
             frame: NSRect(x: 20, y: -8, width: 240, height: 240),
             videoURL: walkVideoURL
@@ -840,6 +869,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         petView.currentAutoWalkState = { [weak self] in self?.autoWalkEnabled ?? false }
         petView.onShowAbout = { [weak self] in self?.showAbout() }
         petView.onQuit = { NSApp.terminate(nil) }
+        container.addSubview(idleVideoView)
         container.addSubview(walkVideoView)
         container.addSubview(actionVideoView)
         container.addSubview(petView)
@@ -890,6 +920,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             playing: walking && playVideo,
             facingLeft: facingLeft
         )
+        if walking {
+            idleVideoView.setState(visible: false, playing: false, facingLeft: false)
+            if !actionVideoActive {
+                petView.setExternalVideoVisible(false)
+            }
+        } else if !actionVideoActive, !petView.sleeping {
+            showIdleVideo()
+        } else {
+            idleVideoView.setState(visible: false, playing: false, facingLeft: false)
+        }
+    }
+
+    private func showIdleVideo() {
+        guard hasIdleVideo, !actionVideoActive, !petView.sleeping else {
+            idleVideoView?.setState(visible: false, playing: false, facingLeft: false)
+            if !actionVideoActive {
+                petView?.setExternalVideoVisible(false)
+            }
+            return
+        }
+        idleVideoView.setState(visible: true, playing: true, facingLeft: false)
+        petView.setExternalVideoVisible(true)
     }
 
     private func prepareActionVideo() -> Int {
@@ -1003,6 +1055,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         walkTimer?.invalidate()
         guard autoWalkEnabled else { return }
         lastWalkTimestamp = CACurrentMediaTime()
+        if !actionVideoActive, !petView.sleeping {
+            setPetWalking(
+                true,
+                facingLeft: walkDirection < 0,
+                playVideo: !walkManuallyPaused
+            )
+        }
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             self?.advanceContinuousWalk()
         }

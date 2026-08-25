@@ -9,6 +9,7 @@ MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 BIN="$MACOS/xiaoba-bin"
 SLEEP_ASSET="$ROOT/Assets/xiaoba-sleep.png"
+IDLE_VIDEO="$ROOT/Assets/xiaoba-idle.mov"
 WALK_VIDEO="$ROOT/Assets/xiaoba-walk.mov"
 ACTION_VIDEO_NAMES=(pat feed call sleep-enter sleep-loop wake)
 CACHE_ROOT="$ROOT/.build/module-cache"
@@ -38,6 +39,7 @@ env \
 cp "$ROOT/Assets/xiaoba.png" "$RESOURCES/xiaoba.png"
 cp "$SLEEP_ASSET" "$RESOURCES/xiaoba-sleep.png"
 rm -rf "$RESOURCES/walk"
+cp "$IDLE_VIDEO" "$RESOURCES/xiaoba-idle.mov"
 cp "$WALK_VIDEO" "$RESOURCES/xiaoba-walk.mov"
 for name in $ACTION_VIDEO_NAMES; do
   cp "$ROOT/Assets/xiaoba-$name.mov" "$RESOURCES/xiaoba-$name.mov"
@@ -63,9 +65,9 @@ cat >"$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.3.0</string>
+  <string>0.4.0</string>
   <key>CFBundleVersion</key>
-  <string>3</string>
+  <string>4</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>LSUIElement</key>

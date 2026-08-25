@@ -13,6 +13,8 @@
 - 行走姿态：Seedance 2.0 Pro 生成 640 × 640、24 FPS、4 秒连续走路片段。下载后用 FFmpeg chromakey + despill 去除绿幕；从原视频中保留首尾步态最吻合的一整段连续步态，并在视频文件内部无缝重复，编码为带 Alpha 的 ProRes 4444。本流程不生成运行时 PNG 帧。AppKit 通过 AVFoundation 以 1.5 倍速循环播放；左行只镜像内部视频层，保证身体和腿部朝向与移动方向一致。
 - 互动姿态：继续使用 Seedance 2.0 Pro，分别生成摸摸、吃零食、回应名字、入睡、熟睡循环、醒来六段 640 × 640、24 FPS、4 秒视频。每段都经过接触表检查后下载到本地，再执行独立绿幕采样、chromakey、despill 和 Alpha 合成检查，最后缩放为 360 × 360 ProRes 4444。运行时只播放这些本地文件。
 - 播放衔接：摸摸、零食、回应、入睡和醒来使用一次性播放器；媒体结束通知之外另有 4.3 秒本地兜底，避免 Alpha 视频偶发漏发结束回调而停在末帧。熟睡使用 `AVPlayerLooper` 无缝循环，叫醒时先退出循环再播放连续起身视频。
+- 默认待机：使用站立参考图和已经验收的摸摸视频共同锁定身份，生成两个 4 秒候选。B 版在呼吸、眨眼、动耳、歪头和轻摇尾巴后能更接近起始站姿，首尾局部 SSIM 约 0.893（A 版约 0.842），因此选用 B 版。透明化后保存为 `xiaoba-idle.mov`，由独立 `AVPlayerLooper` 在默认状态循环。
+- 醒来重制：旧醒来片段结尾出现脸型、腿长和毛发质感偏移。新版同时引用已经验收的睡眠循环、摸摸视频、睡姿图和站姿图，明确要求开头贴合睡眠末帧、结尾贴合统一站姿，并禁止长脸、长腿、直毛、细瘦身体和直尾。两个候选中选用含完整前爪伸展动作、且最终身份一致的 B 版，替换原 `xiaoba-wake.mov`。
 
 ## 最终提示词组
 
@@ -46,6 +48,8 @@ Locked camera, square green-screen asset. Preserve the exact identity, face, cre
 
 具体动作分别为：被画面外轻柔抚摸后眯眼蹭头和摇尾巴；接住小零食后咀嚼并舔嘴；听见名字后竖耳歪头并轻跳；从站姿打哈欠后自然伏下熟睡；保持蜷卧仅做轻柔呼吸和偶尔动耳且首尾一致；从蜷卧睁眼、伸懒腰、站起并摇尾巴。
 
+默认待机额外要求四爪固定、禁止迈步，只允许细微呼吸、眨眼、动耳、歪头和尾巴小幅摆动，并确保首尾站姿一致。重制醒来额外使用睡眠视频与摸摸视频作为首尾身份参考，避免动作过程中换脸或改变犬种特征。
+
 ## 最终文件
 
 `Assets/xiaoba.png`：1254 × 1254、RGBA、带真实 Alpha 通道，供 AppKit 透明窗口使用。
@@ -54,4 +58,6 @@ Locked camera, square green-screen asset. Preserve the exact identity, face, cre
 
 `Assets/xiaoba-walk.mov`：480 × 480、24 FPS、约 6.33 秒、ProRes 4444 Alpha 本地无缝走路视频，供自动散步离线循环播放。
 
-`Assets/xiaoba-pat.mov`、`xiaoba-feed.mov`、`xiaoba-call.mov`、`xiaoba-sleep-enter.mov`、`xiaoba-sleep-loop.mov`、`xiaoba-wake.mov`：360 × 360、24 FPS、约 4.04 秒、ProRes 4444 Alpha 本地互动视频。
+`Assets/xiaoba-idle.mov`：360 × 360、24 FPS、约 4.04 秒、ProRes 4444 Alpha 本地无缝待机视频。
+
+`Assets/xiaoba-pat.mov`、`xiaoba-feed.mov`、`xiaoba-call.mov`、`xiaoba-sleep-enter.mov`、`xiaoba-sleep-loop.mov`、`xiaoba-wake.mov`：360 × 360、24 FPS、约 4.04 秒、ProRes 4444 Alpha 本地互动视频；`xiaoba-wake.mov` 为多参考身份锁定的重制版本。

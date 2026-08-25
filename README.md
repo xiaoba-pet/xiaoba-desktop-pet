@@ -4,6 +4,7 @@
 
 ## 已有互动
 
+- 默认待机：不散步、也没有执行互动时，小八会播放本地透明待机循环，包含呼吸、眨眼、动耳、歪头和轻摇尾巴，不再使用静态图片。
 - 单击小八：播放连续的“摸摸”反应视频，并显示随机回应和爱心。
 - 双击小八：冻结当前走路视频并暂停位移；再次双击继续，不切换图片。
 - 拖动小八：移动到喜欢的位置，位置会自动记住。
@@ -58,12 +59,13 @@ curl -fsSL "https://raw.githubusercontent.com/xiaoba-pet/xiaoba-desktop-pet/main
 ```text
 Assets/xiaoba.png         小八透明 PNG
 Assets/xiaoba-sleep.png   小八透明睡姿 PNG（视频缺失时的后备素材）
+Assets/xiaoba-idle.mov    本地透明无缝待机视频（ProRes 4444）
 Assets/xiaoba-walk.mov    本地透明无缝走路视频（ProRes 4444）
 Assets/xiaoba-pat.mov     本地透明摸摸视频
 Assets/xiaoba-feed.mov    本地透明吃零食视频
 Assets/xiaoba-call.mov    本地透明回应名字视频
 Assets/xiaoba-sleep-*.mov 本地透明入睡与睡眠循环视频
-Assets/xiaoba-wake.mov    本地透明醒来视频
+Assets/xiaoba-wake.mov    多参考身份锁定的本地透明醒来视频
 Sources/XiaobaPet.swift   AppKit 桌宠程序
 scripts/build_app.sh      构建本地 .app
 scripts/xiaoba            启动、停止和自启动 CLI
