@@ -5,12 +5,12 @@
 ## 已有互动
 
 - 单击小八：摸摸它，显示随机回应和爱心。
-- 双击小八：睡觉或唤醒。
+- 双击小八：切换真实睡姿或唤醒。
 - 拖动小八：移动到喜欢的位置，位置会自动记住。
 - 鼠标悬浮：小八会打招呼。
-- 右键小八：叫名字、喂零食、睡觉、自动散步、切换置顶、复位或退出。
+- 右键小八：叫名字、喂零食、睡觉、自动散步、切换置顶、复位或退出；开关项带勾选状态。
 - 菜单栏小狗图标：在小八被窗口挡住时也能叫它回来。
-- 自动散步：默认关闭，右键开启后小八会偶尔在当前屏幕上移动。
+- 自动散步：开启后小八会以 1.5 倍速播放本地透明连续走路视频，窗口位置以 60 FPS 刷新；到左右边缘会同步镜像身体朝向并掉头，睡觉和拖动时暂停。
 
 ## 本地运行
 
@@ -56,6 +56,8 @@ curl -fsSL "https://raw.githubusercontent.com/xiaoba-pet/xiaoba-desktop-pet/main
 
 ```text
 Assets/xiaoba.png         小八透明 PNG
+Assets/xiaoba-sleep.png   小八透明睡姿 PNG
+Assets/xiaoba-walk.mov    本地透明无缝走路视频（ProRes 4444）
 Sources/XiaobaPet.swift   AppKit 桌宠程序
 scripts/build_app.sh      构建本地 .app
 scripts/xiaoba            启动、停止和自启动 CLI

@@ -7,6 +7,9 @@ APP_ROOT="$ROOT/dist/小八.app"
 APP_BIN="$APP_ROOT/Contents/MacOS/xiaoba-bin"
 SOURCE="$ROOT/Sources/XiaobaPet.swift"
 ASSET="$ROOT/Assets/xiaoba.png"
+SLEEP_ASSET="$ROOT/Assets/xiaoba-sleep.png"
+WALK_VIDEO="$ROOT/Assets/xiaoba-walk.mov"
+WALK_BUNDLED_VIDEO="$APP_ROOT/Contents/Resources/xiaoba-walk.mov"
 LABEL="local.xiaoba.desktop-pet"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
@@ -28,7 +31,7 @@ USAGE
 }
 
 build_if_needed() {
-  if [[ ! -x "$APP_BIN" || "$SOURCE" -nt "$APP_BIN" || "$ASSET" -nt "$APP_BIN" ]]; then
+  if [[ ! -x "$APP_BIN" || ! -f "$WALK_BUNDLED_VIDEO" || "$SOURCE" -nt "$APP_BIN" || "$ASSET" -nt "$APP_BIN" || "$SLEEP_ASSET" -nt "$APP_BIN" || "$WALK_VIDEO" -nt "$APP_BIN" ]]; then
     "$SCRIPT_DIR/build_app.sh" >/dev/null
   fi
 }
@@ -91,8 +94,13 @@ fi
 case "$command" in
   start|open)
     build_if_needed
-    /usr/bin/open -n "$APP_ROOT" --args "$@"
-    echo "小八来啦！"
+    if pgrep -f "$APP_BIN" >/dev/null 2>&1; then
+      /usr/bin/open "$APP_ROOT"
+      echo "小八已经在桌面上啦！"
+    else
+      /usr/bin/open "$APP_ROOT" --args "$@"
+      echo "小八来啦！"
+    fi
     ;;
   stop|quit)
     stop_pet
@@ -100,7 +108,7 @@ case "$command" in
   restart)
     stop_pet
     build_if_needed
-    /usr/bin/open -n "$APP_ROOT" --args "$@"
+    /usr/bin/open "$APP_ROOT" --args "$@"
     echo "小八重新来陪你啦！"
     ;;
   status)

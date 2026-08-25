@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import QuartzCore
 
 private struct HeartParticle {
@@ -9,14 +10,90 @@ private struct HeartParticle {
     var lifetime: TimeInterval
 }
 
+final class WalkVideoView: NSView {
+    private let player = AVQueuePlayer()
+    private let playerLayer = AVPlayerLayer()
+    private var looper: AVPlayerLooper?
+    private var playing = false
+    private var facingLeft = false
+    private let playbackRate: Float = 1.5
+
+    override func makeBackingLayer() -> CALayer {
+        let rootLayer = CALayer()
+        rootLayer.backgroundColor = NSColor.clear.cgColor
+        rootLayer.isOpaque = false
+        return rootLayer
+    }
+
+    init(frame: NSRect, videoURL: URL?) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        playerLayer.player = player
+        playerLayer.videoGravity = .resizeAspect
+        playerLayer.backgroundColor = NSColor.clear.cgColor
+        playerLayer.isOpaque = false
+        playerLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        layer?.addSublayer(playerLayer)
+        layoutPlayerLayer()
+        player.isMuted = true
+        player.automaticallyWaitsToMinimizeStalling = false
+
+        if let videoURL {
+            let item = AVPlayerItem(url: videoURL)
+            looper = AVPlayerLooper(player: player, templateItem: item)
+        }
+        isHidden = true
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func layout() {
+        super.layout()
+        layoutPlayerLayer()
+    }
+
+    private func layoutPlayerLayer() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        playerLayer.bounds = bounds
+        playerLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        CATransaction.commit()
+    }
+
+    func setPlaying(_ shouldPlay: Bool, facingLeft shouldFaceLeft: Bool) {
+        if facingLeft != shouldFaceLeft {
+            facingLeft = shouldFaceLeft
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            playerLayer.transform = CATransform3DMakeScale(facingLeft ? -1 : 1, 1, 1)
+            CATransaction.commit()
+        }
+
+        guard playing != shouldPlay else { return }
+        playing = shouldPlay
+        isHidden = !shouldPlay
+        if shouldPlay {
+            player.playImmediately(atRate: playbackRate)
+        } else {
+            player.pause()
+        }
+    }
+}
+
 final class PetView: NSView {
-    private let image: NSImage
+    private let idleImage: NSImage
+    private let sleepImage: NSImage?
+    private let usesWalkVideo: Bool
     private var displayTimer: Timer?
     private var trackingAreaRef: NSTrackingArea?
     private var message: String?
     private var messageExpiresAt: TimeInterval = 0
     private var jumpStartedAt: TimeInterval?
     private var wobbleStartedAt: TimeInterval?
+    private var attentionStartedAt: TimeInterval?
     private var hearts: [HeartParticle] = []
     private var mouseDownLocation: NSPoint?
     private var windowOriginAtMouseDown: NSPoint?
@@ -31,11 +108,15 @@ final class PetView: NSView {
     var onResetPosition: (() -> Void)?
     var onToggleTopmost: (() -> Bool)?
     var onToggleAutoWalk: (() -> Bool)?
+    var currentTopmostState: (() -> Bool)?
+    var currentAutoWalkState: (() -> Bool)?
     var onShowAbout: (() -> Void)?
     var onQuit: (() -> Void)?
 
-    init(frame: NSRect, image: NSImage) {
-        self.image = image
+    init(frame: NSRect, image: NSImage, sleepImage: NSImage? = nil, usesWalkVideo: Bool = false) {
+        self.idleImage = image
+        self.sleepImage = sleepImage
+        self.usesWalkVideo = usesWalkVideo
         super.init(frame: frame)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -68,7 +149,7 @@ final class PetView: NSView {
     }
 
     private func startDisplayTimer() {
-        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             self?.tick()
         }
         displayTimer = timer
@@ -89,35 +170,61 @@ final class PetView: NSView {
         dirtyRect.fill()
 
         let now = CACurrentMediaTime()
-        let phase = now * (sleeping ? 1.3 : walking ? 7.0 : 2.3)
-        let bob = CGFloat(sin(phase)) * (sleeping ? 1.2 : walking ? 4.8 : 2.1)
-        let breathingScale = 1 + CGFloat(sin(phase * 0.72)) * (sleeping ? 0.008 : 0.014)
+        let phase = now * (sleeping ? 1.3 : 2.3)
+        let bob = sleeping
+            ? CGFloat(sin(phase)) * 1.2
+            : walking ? 0 : CGFloat(sin(phase)) * 2.1
+        let breathingScale = walking ? 1 : 1 + CGFloat(sin(phase * 0.72)) * (sleeping ? 0.008 : 0.014)
         let hoverScale: CGFloat = hovered && !sleeping ? 1.035 : 1
         let jump = jumpOffset(at: now)
         let wobble = wobbleAngle(at: now)
-        let baseSize: CGFloat = 218
-        let center = NSPoint(x: bounds.midX, y: 112 + bob + jump)
+        let activeImage = sleeping ? (sleepImage ?? idleImage) : idleImage
+        let targetSize = sleeping ? NSSize(width: 246, height: 170) : NSSize(width: 218, height: 218)
+        let center = NSPoint(
+            x: bounds.midX,
+            y: (sleeping ? 91 : 112) + bob + jump
+        )
 
-        NSGraphicsContext.saveGraphicsState()
-        if let context = NSGraphicsContext.current?.cgContext {
-            context.translateBy(x: center.x, y: center.y)
-            context.rotate(by: wobble)
-            context.scaleBy(
-                x: (facingLeft ? -1 : 1) * breathingScale * hoverScale,
-                y: breathingScale * hoverScale
-            )
-            let petRect = NSRect(x: -baseSize / 2, y: -baseSize / 2, width: baseSize, height: baseSize)
-            image.draw(
-                in: petRect,
-                from: .zero,
-                operation: .sourceOver,
-                fraction: sleeping ? 0.90 : 1,
-                respectFlipped: true,
-                hints: [.interpolation: NSImageInterpolation.high]
-            )
+        if !walking || !usesWalkVideo {
+            drawGroundShadow(now: now)
         }
-        NSGraphicsContext.restoreGraphicsState()
 
+        if !walking || !usesWalkVideo {
+            NSGraphicsContext.saveGraphicsState()
+            if let context = NSGraphicsContext.current?.cgContext {
+                context.translateBy(x: center.x, y: center.y)
+                context.rotate(by: wobble)
+                context.scaleBy(
+                    x: (facingLeft ? -1 : 1) * breathingScale * hoverScale,
+                    y: breathingScale * hoverScale
+                )
+                let imageRatio = max(0.01, activeImage.size.width / activeImage.size.height)
+                let boxRatio = targetSize.width / targetSize.height
+                let drawSize: NSSize
+                if imageRatio > boxRatio {
+                    drawSize = NSSize(width: targetSize.width, height: targetSize.width / imageRatio)
+                } else {
+                    drawSize = NSSize(width: targetSize.height * imageRatio, height: targetSize.height)
+                }
+                let petRect = NSRect(
+                    x: -drawSize.width / 2,
+                    y: -drawSize.height / 2,
+                    width: drawSize.width,
+                    height: drawSize.height
+                )
+                activeImage.draw(
+                    in: petRect,
+                    from: .zero,
+                    operation: .sourceOver,
+                    fraction: sleeping ? 0.90 : 1,
+                    respectFlipped: true,
+                    hints: [.interpolation: NSImageInterpolation.high]
+                )
+            }
+            NSGraphicsContext.restoreGraphicsState()
+        }
+
+        drawAttentionHalo(now: now)
         drawHearts(now: now)
         if sleeping {
             drawSleepMarks(now: now)
@@ -125,6 +232,34 @@ final class PetView: NSView {
         if let message {
             drawBubble(message)
         }
+    }
+
+    private func drawGroundShadow(now: TimeInterval) {
+        let pulse = walking ? abs(CGFloat(sin(now * 7))) : 0
+        let width: CGFloat = sleeping ? 196 : 126 - pulse * 12
+        let rect = NSRect(
+            x: bounds.midX - width / 2,
+            y: sleeping ? 28 : 17,
+            width: width,
+            height: sleeping ? 16 : 12
+        )
+        NSColor.black.withAlphaComponent(sleeping ? 0.13 : 0.11).setFill()
+        NSBezierPath(ovalIn: rect).fill()
+    }
+
+    private func drawAttentionHalo(now: TimeInterval) {
+        guard let attentionStartedAt else { return }
+        let progress = CGFloat((now - attentionStartedAt) / 0.85)
+        if progress >= 1 {
+            self.attentionStartedAt = nil
+            return
+        }
+        let inset = 32 - progress * 18
+        let rect = bounds.insetBy(dx: inset, dy: inset + 10)
+        let path = NSBezierPath(ovalIn: rect)
+        path.lineWidth = 4 - progress * 2
+        NSColor.systemYellow.withAlphaComponent((1 - progress) * 0.45).setStroke()
+        path.stroke()
     }
 
     private func jumpOffset(at now: TimeInterval) -> CGFloat {
@@ -225,6 +360,13 @@ final class PetView: NSView {
         needsDisplay = true
     }
 
+    func showStatus(_ text: String, pulse: Bool = true) {
+        showMessage(text)
+        if pulse {
+            attentionStartedAt = CACurrentMediaTime()
+        }
+    }
+
     private func emitHearts(_ count: Int) {
         let now = CACurrentMediaTime()
         for index in 0..<count {
@@ -271,7 +413,10 @@ final class PetView: NSView {
     func toggleSleep() {
         sleeping.toggle()
         walking = false
-        showMessage(sleeping ? "小八先睡一会儿……" : "早上好！")
+        showStatus(sleeping ? "小八先睡一会儿……" : "早上好！", pulse: !sleeping)
+        if !sleeping {
+            jumpStartedAt = CACurrentMediaTime()
+        }
     }
 
     func setWalking(_ walking: Bool, facingLeft: Bool = false) {
@@ -335,6 +480,12 @@ final class PetView: NSView {
         return item
     }
 
+    private func toggleMenuItem(_ title: String, action: Selector, enabled: Bool) -> NSMenuItem {
+        let item = menuItem(title, action: action)
+        item.state = enabled ? .on : .off
+        return item
+    }
+
     private func makeContextMenu() -> NSMenu {
         let menu = NSMenu(title: "小八")
         menu.addItem(menuItem("摸摸小八", action: #selector(patFromMenu)))
@@ -342,9 +493,17 @@ final class PetView: NSView {
         menu.addItem(menuItem("给小八零食", action: #selector(feedFromMenu)))
         menu.addItem(menuItem(sleeping ? "叫醒小八" : "让小八睡觉", action: #selector(sleepFromMenu)))
         menu.addItem(.separator())
-        menu.addItem(menuItem("自动散步 开/关", action: #selector(autoWalkFromMenu)))
-        menu.addItem(menuItem("始终置顶 开/关", action: #selector(topmostFromMenu)))
-        menu.addItem(menuItem("回到右下角", action: #selector(resetFromMenu)))
+        menu.addItem(toggleMenuItem(
+            "自动散步",
+            action: #selector(autoWalkFromMenu),
+            enabled: currentAutoWalkState?() ?? false
+        ))
+        menu.addItem(toggleMenuItem(
+            "始终置顶",
+            action: #selector(topmostFromMenu),
+            enabled: currentTopmostState?() ?? true
+        ))
+        menu.addItem(menuItem("回到当前屏幕右下角", action: #selector(resetFromMenu)))
         menu.addItem(.separator())
         menu.addItem(menuItem("关于小八", action: #selector(aboutFromMenu)))
         menu.addItem(menuItem("退出小八", action: #selector(quitFromMenu)))
@@ -358,12 +517,12 @@ final class PetView: NSView {
 
     @objc private func autoWalkFromMenu() {
         let enabled = onToggleAutoWalk?() ?? false
-        showMessage(enabled ? "散步时间到！" : "小八不乱跑啦")
+        showStatus(enabled ? "自动散步已开启，出发！" : "自动散步已关闭")
     }
 
     @objc private func topmostFromMenu() {
         let enabled = onToggleTopmost?() ?? true
-        showMessage(enabled ? "我会一直陪着你～" : "我安静待在桌面")
+        showStatus(enabled ? "始终置顶已开启" : "始终置顶已关闭")
     }
 
     @objc private func resetFromMenu() { onResetPosition?() }
@@ -371,15 +530,21 @@ final class PetView: NSView {
     @objc private func quitFromMenu() { onQuit?() }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let windowSize = NSSize(width: 280, height: 300)
     private let positionDefaultsKey = "XiaobaPetWindowOrigin"
     private let autoWalkDefaultsKey = "XiaobaPetAutoWalk"
     private let topmostDefaultsKey = "XiaobaPetTopmost"
     private var window: NSWindow!
     private var petView: PetView!
+    private var walkVideoView: WalkVideoView!
     private var statusItem: NSStatusItem?
+    private var statusAutoWalkItem: NSMenuItem?
+    private var statusTopmostItem: NSMenuItem?
     private var walkTimer: Timer?
+    private var walkDirection: CGFloat = -1
+    private var lastWalkTimestamp: TimeInterval?
+    private let walkSpeed: CGFloat = 81
     private var autoWalkEnabled = false
     private var topmost = true
 
@@ -389,6 +554,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showFatalError("找不到小八的图片资源 xiaoba.png")
             return
         }
+        let sleepImage = loadSleepImage()
+        let walkVideoURL = loadWalkVideoURL()
 
         autoWalkEnabled = UserDefaults.standard.bool(forKey: autoWalkDefaultsKey)
         if UserDefaults.standard.object(forKey: topmostDefaultsKey) == nil {
@@ -397,9 +564,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             topmost = UserDefaults.standard.bool(forKey: topmostDefaultsKey)
         }
 
-        buildWindow(image: image)
+        buildWindow(image: image, sleepImage: sleepImage, walkVideoURL: walkVideoURL)
         buildStatusItem()
-        installWalkTimer()
+        if autoWalkEnabled {
+            startContinuousWalk()
+        }
     }
 
     private func loadPetImage() -> NSImage? {
@@ -409,7 +578,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return NSImage(contentsOfFile: path)
     }
 
-    private func buildWindow(image: NSImage) {
+    private func loadSleepImage() -> NSImage? {
+        let explicitPath = argumentValue("--sleep-image")
+        let path = explicitPath ?? Bundle.main.path(forResource: "xiaoba-sleep", ofType: "png")
+        guard let path else { return nil }
+        return NSImage(contentsOfFile: path)
+    }
+
+    private func loadWalkVideoURL() -> URL? {
+        if let explicitPath = argumentValue("--walk-video") {
+            return URL(fileURLWithPath: explicitPath)
+        }
+        return Bundle.main.url(forResource: "xiaoba-walk", withExtension: "mov")
+    }
+
+    private func buildWindow(image: NSImage, sleepImage: NSImage?, walkVideoURL: URL?) {
         let savedOrigin = savedWindowOrigin()
         let initialOrigin = savedOrigin ?? defaultWindowOrigin()
         window = NSWindow(
@@ -426,14 +609,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.animationBehavior = .utilityWindow
 
-        petView = PetView(frame: NSRect(origin: .zero, size: windowSize), image: image)
+        let container = NSView(frame: NSRect(origin: .zero, size: windowSize))
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.clear.cgColor
+
+        walkVideoView = WalkVideoView(
+            frame: NSRect(x: 20, y: -8, width: 240, height: 240),
+            videoURL: walkVideoURL
+        )
+        petView = PetView(
+            frame: NSRect(origin: .zero, size: windowSize),
+            image: image,
+            sleepImage: sleepImage,
+            usesWalkVideo: walkVideoURL != nil
+        )
         petView.onPositionChanged = { [weak self] in self?.saveWindowOrigin() }
         petView.onResetPosition = { [weak self] in self?.resetPosition() }
         petView.onToggleTopmost = { [weak self] in self?.toggleTopmost() ?? true }
         petView.onToggleAutoWalk = { [weak self] in self?.toggleAutoWalk() ?? false }
+        petView.currentTopmostState = { [weak self] in self?.topmost ?? true }
+        petView.currentAutoWalkState = { [weak self] in self?.autoWalkEnabled ?? false }
         petView.onShowAbout = { [weak self] in self?.showAbout() }
         petView.onQuit = { NSApp.terminate(nil) }
-        window.contentView = petView
+        container.addSubview(walkVideoView)
+        container.addSubview(petView)
+        window.contentView = container
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -446,12 +646,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(statusMenuItem("给小八零食", action: #selector(feedPet)))
         menu.addItem(statusMenuItem("睡觉 / 起床", action: #selector(toggleSleep)))
         menu.addItem(.separator())
+        let autoWalkItem = statusMenuItem("自动散步", action: #selector(toggleAutoWalkFromStatus))
+        let topmostItem = statusMenuItem("始终置顶", action: #selector(toggleTopmostFromStatus))
+        menu.addItem(autoWalkItem)
+        menu.addItem(topmostItem)
+        statusAutoWalkItem = autoWalkItem
+        statusTopmostItem = topmostItem
+        menu.addItem(.separator())
         menu.addItem(statusMenuItem("显示小八", action: #selector(showPet)))
-        menu.addItem(statusMenuItem("回到右下角", action: #selector(resetPetPosition)))
+        menu.addItem(statusMenuItem("回到当前屏幕右下角", action: #selector(resetPetPosition)))
         menu.addItem(.separator())
         menu.addItem(statusMenuItem("退出小八", action: #selector(quitPet)))
+        menu.delegate = self
         item.menu = menu
         statusItem = item
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        statusAutoWalkItem?.state = autoWalkEnabled ? .on : .off
+        statusTopmostItem?.state = topmost ? .on : .off
     }
 
     private func statusMenuItem(_ title: String, action: Selector) -> NSMenuItem {
@@ -460,53 +673,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return item
     }
 
-    private func installWalkTimer() {
-        let timer = Timer(timeInterval: 13, repeats: true) { [weak self] _ in
-            self?.takeAutomaticWalkIfNeeded()
+    private func setPetWalking(_ walking: Bool, facingLeft: Bool = false) {
+        petView.setWalking(walking, facingLeft: facingLeft)
+        walkVideoView.setPlaying(walking, facingLeft: facingLeft)
+    }
+
+    private func startContinuousWalk() {
+        walkTimer?.invalidate()
+        guard autoWalkEnabled else { return }
+        lastWalkTimestamp = CACurrentMediaTime()
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            self?.advanceContinuousWalk()
         }
         walkTimer = timer
         RunLoop.main.add(timer, forMode: .common)
     }
 
-    private func takeAutomaticWalkIfNeeded() {
-        guard autoWalkEnabled, !petView.sleeping, let screen = window.screen ?? NSScreen.main else { return }
+    private func stopContinuousWalk() {
+        walkTimer?.invalidate()
+        walkTimer = nil
+        lastWalkTimestamp = nil
+        setPetWalking(false)
+        saveWindowOrigin()
+    }
+
+    private func advanceContinuousWalk() {
+        guard autoWalkEnabled, let screen = window.screen ?? NSScreen.main else { return }
+        let now = CACurrentMediaTime()
+        let elapsed = min(0.08, max(0, now - (lastWalkTimestamp ?? now)))
+        lastWalkTimestamp = now
+
+        guard !petView.sleeping else {
+            setPetWalking(false)
+            return
+        }
+        guard NSEvent.pressedMouseButtons & 1 == 0 else {
+            setPetWalking(false)
+            return
+        }
+
         let visible = screen.visibleFrame
         let oldOrigin = window.frame.origin
-        let direction: CGFloat = Bool.random() ? 1 : -1
-        let distance = CGFloat.random(in: 80...180) * direction
-        let targetX = min(visible.maxX - window.frame.width, max(visible.minX, oldOrigin.x + distance))
-        let targetY = min(visible.maxY - window.frame.height, max(visible.minY, oldOrigin.y + CGFloat.random(in: -24...24)))
-        guard abs(targetX - oldOrigin.x) > 8 else { return }
+        let minX = visible.minX
+        let maxX = visible.maxX - window.frame.width
+        var targetX = oldOrigin.x + walkDirection * walkSpeed * CGFloat(elapsed)
 
-        petView.setWalking(true, facingLeft: targetX < oldOrigin.x)
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 1.8
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            window.animator().setFrameOrigin(NSPoint(x: targetX, y: targetY))
-        } completionHandler: { [weak self] in
-            self?.petView.setWalking(false)
-            self?.saveWindowOrigin()
+        if targetX <= minX {
+            targetX = minX
+            walkDirection = 1
+            petView.showStatus("到边啦，掉头～", pulse: false)
+        } else if targetX >= maxX {
+            targetX = maxX
+            walkDirection = -1
+            petView.showStatus("到边啦，掉头～", pulse: false)
         }
+
+        setPetWalking(true, facingLeft: walkDirection < 0)
+        window.setFrameOrigin(NSPoint(x: targetX, y: oldOrigin.y))
     }
 
     private func toggleAutoWalk() -> Bool {
         autoWalkEnabled.toggle()
         UserDefaults.standard.set(autoWalkEnabled, forKey: autoWalkDefaultsKey)
-        if !autoWalkEnabled {
-            petView.setWalking(false)
+        if autoWalkEnabled {
+            startContinuousWalk()
+        } else {
+            stopContinuousWalk()
         }
+        statusAutoWalkItem?.state = autoWalkEnabled ? .on : .off
         return autoWalkEnabled
     }
 
     private func toggleTopmost() -> Bool {
         topmost.toggle()
         window.level = topmost ? .floating : .normal
+        if topmost {
+            window.orderFrontRegardless()
+        }
         UserDefaults.standard.set(topmost, forKey: topmostDefaultsKey)
+        statusTopmostItem?.state = topmost ? .on : .off
         return topmost
     }
 
-    private func defaultWindowOrigin() -> NSPoint {
-        let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+    private func defaultWindowOrigin(on screen: NSScreen? = nil) -> NSPoint {
+        let visible = (screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         return NSPoint(x: visible.maxX - windowSize.width - 24, y: visible.minY + 22)
     }
 
@@ -520,10 +770,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func resetPosition() {
-        let origin = defaultWindowOrigin()
-        window.setFrameOrigin(origin)
-        saveWindowOrigin()
-        petView.callName()
+        let origin = defaultWindowOrigin(on: window.screen)
+        let movingLeft = origin.x < window.frame.origin.x
+        let shouldResumeWalking = autoWalkEnabled
+        walkTimer?.invalidate()
+        walkTimer = nil
+        setPetWalking(true, facingLeft: movingLeft)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.55
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrameOrigin(origin)
+        } completionHandler: { [weak self] in
+            guard let self else { return }
+            self.setPetWalking(false)
+            self.saveWindowOrigin()
+            self.petView.showStatus("回到右下角啦！")
+            if shouldResumeWalking {
+                self.walkDirection = -1
+                self.startContinuousWalk()
+            }
+        }
     }
 
     private func showAbout() {
@@ -549,6 +815,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func callPet() { petView.callName() }
     @objc private func feedPet() { petView.feed() }
     @objc private func toggleSleep() { petView.toggleSleep() }
+    @objc private func toggleAutoWalkFromStatus() {
+        let enabled = toggleAutoWalk()
+        petView.showStatus(enabled ? "自动散步已开启，出发！" : "自动散步已关闭")
+    }
+    @objc private func toggleTopmostFromStatus() {
+        let enabled = toggleTopmost()
+        petView.showStatus(enabled ? "始终置顶已开启" : "始终置顶已关闭")
+    }
     @objc private func showPet() { window.makeKeyAndOrderFront(nil) }
     @objc private func resetPetPosition() { resetPosition() }
     @objc private func quitPet() { NSApp.terminate(nil) }
@@ -569,9 +843,23 @@ if let previewPath = argumentValue("--render-preview") {
         fputs("unable to load xiaoba image for preview\n", stderr)
         exit(1)
     }
+    let sleepImagePath = argumentValue("--sleep-image") ?? Bundle.main.path(forResource: "xiaoba-sleep", ofType: "png")
+    let previewSleepImage = sleepImagePath.flatMap { NSImage(contentsOfFile: $0) }
     let size = NSSize(width: 280, height: 300)
-    let view = PetView(frame: NSRect(origin: .zero, size: size), image: image)
-    view.callName()
+    let view = PetView(
+        frame: NSRect(origin: .zero, size: size),
+        image: image,
+        sleepImage: previewSleepImage,
+        usesWalkVideo: false
+    )
+    let previewState = argumentValue("--preview-state")
+    if previewState == "sleep" {
+        view.toggleSleep()
+    } else if previewState == "walk" {
+        view.setWalking(true, facingLeft: argumentValue("--preview-direction") == "left")
+    } else {
+        view.callName()
+    }
     guard let bitmap = NSBitmapImageRep(
         bitmapDataPlanes: nil,
         pixelsWide: Int(size.width * 2),

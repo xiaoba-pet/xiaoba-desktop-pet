@@ -28,6 +28,9 @@ git -C "$TEMP_DIR" checkout -q --detach FETCH_HEAD
 
 mkdir -p "${INSTALL_DIR:h}"
 if [[ -d "$INSTALL_DIR" ]]; then
+  if [[ -x "$INSTALL_DIR/scripts/xiaoba" ]]; then
+    "$INSTALL_DIR/scripts/xiaoba" stop >/dev/null 2>&1 || true
+  fi
   BACKUP_DIR="$INSTALL_DIR.backup.$(date +%Y%m%d%H%M%S)"
   mv "$INSTALL_DIR" "$BACKUP_DIR"
   echo "旧版本已备份到：$BACKUP_DIR"

@@ -8,6 +8,8 @@ CONTENTS="$APP_ROOT/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 BIN="$MACOS/xiaoba-bin"
+SLEEP_ASSET="$ROOT/Assets/xiaoba-sleep.png"
+WALK_VIDEO="$ROOT/Assets/xiaoba-walk.mov"
 CACHE_ROOT="$ROOT/.build/module-cache"
 DEFAULT_SDK="$(xcrun --sdk macosx --show-sdk-path)"
 COMPAT_SDK="/Library/Developer/CommandLineTools/SDKs/MacOSX14.sdk"
@@ -27,11 +29,15 @@ env \
   -target "$(uname -m)-apple-macosx13.0" \
   -O \
   -framework AppKit \
+  -framework AVFoundation \
   -framework QuartzCore \
   -o "$BIN" \
   "$ROOT/Sources/XiaobaPet.swift"
 
 cp "$ROOT/Assets/xiaoba.png" "$RESOURCES/xiaoba.png"
+cp "$SLEEP_ASSET" "$RESOURCES/xiaoba-sleep.png"
+rm -rf "$RESOURCES/walk"
+cp "$WALK_VIDEO" "$RESOURCES/xiaoba-walk.mov"
 
 cat >"$CONTENTS/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -53,9 +59,9 @@ cat >"$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>0.2.0</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>2</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>LSUIElement</key>
